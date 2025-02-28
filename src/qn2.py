@@ -1,7 +1,7 @@
 import numpy as np
 import random
 import matplotlib.pyplot as plt
-
+import itertools
 from pgmpy.models import BayesianNetwork
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.inference import VariableElimination
@@ -76,7 +76,7 @@ class WumpusWorld:
                 elif self.grid[r][c] == 'G':
                     plt.text(c, r, 'G', ha='center', va='center')
                 else:
-                    plt.text(c, r, '0', ha='center', va='center')
+                    plt.text(c, r, 'E', ha='center', va='center')
         
         plt.xlim(-0.5, self.N-0.5)
         plt.ylim(self.N-0.5, -0.5)
@@ -84,121 +84,134 @@ class WumpusWorld:
         plt.savefig(f"Wumpus_World_Step_{step}.png")
         plt.close()
 
-class BayesianPitInference:
-    def __init__(self, N, pit_prob=0.15):
+
+class BayesianInference:
+    def __init__(self, N, pit_prob=0.15, seed=42):
         self.N = N
         self.pit_prob = pit_prob
-        self.max_depth = N//2 - 1  # Maximum depth for inference
+        self.wumpus_prior = 1.0 / (N*N - 1)  # Assuming one Wumpus, excluding (0,0)
         self.model = BayesianNetwork()
         
-        # Create nodes only for cells within max_depth of any cell
+        # Create nodes for pits, breezes, wumpus, stenches
         self.pit_vars = []
         self.breeze_vars = []
+        self.wumpus_vars = []
+        self.stench_vars = []
         
         for r in range(N):
             for c in range(N):
                 p_var = f"Pit_{r}_{c}"
                 b_var = f"Breeze_{r}_{c}"
+                s_var = f"Stench_{r}_{c}"
                 self.pit_vars.append(p_var)
                 self.breeze_vars.append(b_var)
+                self.stench_vars.append(s_var)
+                if (r, c) != (0, 0):
+                    w_var = f"Wumpus_{r}_{c}"
+                    self.wumpus_vars.append(w_var)
         
-        self.model.add_nodes_from(self.pit_vars + self.breeze_vars)
+        # Add all nodes to the model
+        self.model.add_nodes_from(self.pit_vars + self.breeze_vars + self.wumpus_vars + self.stench_vars)
         
-        # Add edges with depth limitation
+        # Add edges for breezes and stenches
         for r in range(N):
             for c in range(N):
                 b_var = f"Breeze_{r}_{c}"
-                neighbors = self.get_neighbors_within_depth(r, c)
-                for nr, nc in neighbors:
-                    p_var = f"Pit_{nr}_{nc}"
-                    self.model.add_edge(p_var, b_var)
+                s_var = f"Stench_{r}_{c}"
+                # Breeze edges from adjacent pits
+                for nr, nc in self.get_adjacent_neighbors(r, c):
+                    self.model.add_edge(f"Pit_{nr}_{nc}", b_var)
+                # Stench edges from adjacent Wumpus
+                for nr, nc in self.get_adjacent_neighbors(r, c):
+                    if (nr, nc) != (0, 0):
+                        self.model.add_edge(f"Wumpus_{nr}_{nc}", s_var)
         
         # Define CPDs
         self._define_cpds()
-        
-        # Create inference object
         self.inference = VariableElimination(self.model)
     
-    def get_neighbors_within_depth(self, r, c):
-        """Get neighbors within max_depth Manhattan distance"""
+    def get_adjacent_neighbors(self, r, c):
+        directions = [(-1,0), (1,0), (0,-1), (0,1)]
         neighbors = []
-        for dr in range(-self.max_depth, self.max_depth + 1):
-            for dc in range(-self.max_depth, self.max_depth + 1):
-                if abs(dr) + abs(dc) <= self.max_depth and (dr != 0 or dc != 0):
-                    nr, nc = r + dr, c + dc
-                    if 0 <= nr < self.N and 0 <= nc < self.N:
-                        neighbors.append((nr, nc))
+        for dr, dc in directions:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < self.N and 0 <= nc < self.N:
+                neighbors.append((nr, nc))
         return neighbors
     
     def _define_cpds(self):
-        # Define pit CPDs
+        # Define Pit CPDs
         pit_cpds = []
         for r in range(self.N):
             for c in range(self.N):
-                p_var = f"Pit_{r}_{c}"
-                cpd = TabularCPD(
-                    variable=p_var,
-                    variable_card=2,
-                    values=[[1 - self.pit_prob], [self.pit_prob]]
-                )
+                if (r, c) == (0, 0):
+                    cpd = TabularCPD(f"Pit_{r}_{c}", 2, [[1.0], [0.0]])
+                else:
+                    cpd = TabularCPD(f"Pit_{r}_{c}", 2, [[1-self.pit_prob], [self.pit_prob]])
                 pit_cpds.append(cpd)
         
-        # Define breeze CPDs
+        # Define Wumpus CPDs
+        wumpus_cpds = []
+        for var in self.wumpus_vars:
+            cpd = TabularCPD(var, 2, [[1 - self.wumpus_prior], [self.wumpus_prior]])
+            wumpus_cpds.append(cpd)
+        
+        # Define Breeze CPDs
         breeze_cpds = []
         for r in range(self.N):
             for c in range(self.N):
                 b_var = f"Breeze_{r}_{c}"
-                neighbors = self.get_neighbors_within_depth(r, c)
-                parent_vars = [f"Pit_{nr}_{nc}" for nr, nc in neighbors]
-                
-                if not parent_vars:  # No parents case
-                    cpd = TabularCPD(
-                        variable=b_var,
-                        variable_card=2,
-                        values=[[1.0], [0.0]]
-                    )
+                parents = [f"Pit_{nr}_{nc}" for nr, nc in self.get_adjacent_neighbors(r, c)]
+                if not parents:
+                    cpd = TabularCPD(b_var, 2, [[1.0], [0.0]])
                 else:
-                    num_parents = len(parent_vars)
-                    cpd_size = 2 ** num_parents
-                    false_row = []
-                    true_row = []
-                    
-                    for combo in range(cpd_size):
-                        bits = [(combo >> i) & 1 for i in range(num_parents)]
-                        if any(bits):
-                            false_row.append(0.0)
-                            true_row.append(1.0)
-                        else:
-                            false_row.append(1.0)
-                            true_row.append(0.0)
-                    
-                    cpd = TabularCPD(
-                        variable=b_var,
-                        variable_card=2,
-                        values=[false_row, true_row],
-                        evidence=parent_vars,
-                        evidence_card=[2]*num_parents
-                    )
+                    values = [[0.0 if any(combo) else 1.0 for combo in itertools.product([0,1], repeat=len(parents))],
+                              [1.0 if any(combo) else 0.0 for combo in itertools.product([0,1], repeat=len(parents))]]
+                    cpd = TabularCPD(b_var, 2, values, parents, [2]*len(parents))
                 breeze_cpds.append(cpd)
         
-        # Add all CPDs to model
-        self.model.add_cpds(*(pit_cpds + breeze_cpds))
+        # Define Stench CPDs
+        stench_cpds = []
+        for r in range(self.N):
+            for c in range(self.N):
+                s_var = f"Stench_{r}_{c}"
+                parents = [f"Wumpus_{nr}_{nc}" for nr, nc in self.get_adjacent_neighbors(r, c) if (nr, nc) != (0,0)]
+                if not parents:
+                    cpd = TabularCPD(s_var, 2, [[1.0], [0.0]])
+                else:
+                    values = [[0.0 if any(combo) else 1.0 for combo in itertools.product([0,1], repeat=len(parents))],
+                              [1.0 if any(combo) else 0.0 for combo in itertools.product([0,1], repeat=len(parents))]]
+                    cpd = TabularCPD(s_var, 2, values, parents, [2]*len(parents))
+                stench_cpds.append(cpd)
+        
+        self.model.add_cpds(*(pit_cpds + wumpus_cpds + breeze_cpds + stench_cpds))
         self.model.check_model()
     
     def update_inference(self, evidence_dict):
-        pit_prob_matrix = np.zeros((self.N, self.N))
+        filtered_evidence = {k: v for k, v in evidence_dict.items() if k in self.model.nodes()}
+        pit_probs = np.zeros((self.N, self.N))
+        wumpus_probs = np.zeros((self.N, self.N))
         
         for r in range(self.N):
             for c in range(self.N):
-                p_var = f"Pit_{r}_{c}"
-                query_res = self.inference.query(
-                    variables=[p_var],
-                    evidence=evidence_dict,
-                    show_progress=False
-                )
-                pit_prob_matrix[r, c] = query_res.values[1]
+                pit_var = f"Pit_{r}_{c}"
+                # Only query if this variable is not in evidence
+                if pit_var not in filtered_evidence:
+                    query = self.inference.query(variables=[pit_var], evidence=filtered_evidence)
+                    pit_probs[r, c] = query.values[1]
+                else:
+                    # If it's in evidence, use that value directly
+                    pit_probs[r, c] = filtered_evidence[pit_var]
+                    
+                if (r, c) != (0, 0):
+                    wumpus_var = f"Wumpus_{r}_{c}"
+                    if wumpus_var not in filtered_evidence:
+                        query = self.inference.query(variables=[wumpus_var], evidence=filtered_evidence)
+                        wumpus_probs[r, c] = query.values[1]
+                    else:
+                        wumpus_probs[r, c] = filtered_evidence[wumpus_var]
         
-        return pit_prob_matrix
+        return pit_probs, wumpus_probs
 
 def plot_pit_probabilities(prob_matrix, step):
     """Plot pit probabilities matching the example format"""
@@ -218,11 +231,61 @@ def plot_pit_probabilities(prob_matrix, step):
     plt.savefig(f"Pit_Probability_Heatmap_Step_{step}.png")
     plt.close()
 
+
+def plot_wumpus_probabilities(prob_matrix, step):
+    """Plot wumpus probabilities"""
+    plt.figure(figsize=(5, 4))
+    plt.imshow(prob_matrix, cmap='Reds', origin='upper', vmin=0, vmax=1)
+    plt.colorbar(label='Probability of Wumpus')
+    
+    for r in range(prob_matrix.shape[0]):
+        for c in range(prob_matrix.shape[1]):
+            plt.text(c, r, f"{prob_matrix[r,c]:.2f}",
+                     ha="center", va="center", color="black")
+    
+    plt.title(f"Wumpus Probability Heatmap\nIn Step-{step}")
+    plt.xlabel("Column")
+    plt.ylabel("Row")
+    plt.tight_layout()
+    plt.savefig(f"Wumpus_Probability_Heatmap_Step_{step}.png")
+    plt.close()
+
+
+def plot_danger_probabilities(pit_matrix, wumpus_matrix, step):
+    """Plot combined danger probabilities (pits + wumpus)"""
+    # Combine probabilities - a cell is dangerous if it contains either a pit or wumpus
+    # P(dangerous) = P(pit OR wumpus) = P(pit) + P(wumpus) - P(pit AND wumpus)
+    # Assuming pit and wumpus are independent: P(pit AND wumpus) = P(pit) * P(wumpus)
+    danger_matrix = pit_matrix + wumpus_matrix - (pit_matrix * wumpus_matrix)
+    
+    # plt.figure(figsize=(5, 4))
+    # plt.imshow(danger_matrix, cmap='RdYlGn_r', origin='upper', vmin=0, vmax=1)
+    # plt.colorbar(label='Probability of Danger')
+    
+    # for r in range(danger_matrix.shape[0]):
+    #     for c in range(danger_matrix.shape[1]):
+    #         plt.text(c, r, f"{danger_matrix[r,c]:.2f}",
+    #                  ha="center", va="center", color="black")
+    
+    # plt.title(f"Combined Danger Probability\nIn Step-{step}")
+    # plt.xlabel("Column")
+    # plt.ylabel("Row")
+    # plt.tight_layout()
+    # plt.savefig(f"Danger_Probability_Heatmap_Step_{step}.png")
+    # plt.close()
+    
+    return danger_matrix
+
+
 class Agent:
     def __init__(self, start=(0,0)):
         self.position = start
         self.visited = {start}
         self.last_safe_position = start
+        self.path_history = [start]
+        self.visit_counts = {start: 1}
+        self.known_pits = set()
+        self.known_wumpus = set()
     
     def get_possible_moves(self, N):
         r, c = self.position
@@ -232,92 +295,184 @@ class Agent:
             if 0 <= nr < N and 0 <= nc < N:
                 moves.append((nr, nc))
         return moves
-    
+
     def choose_random_move(self, N):
         moves = self.get_possible_moves(N)
-        return random.choice(moves) if moves else self.position
-    
+        return random.choice(moves) if moves else self.position  
+
     def choose_best_move(self, pit_prob_matrix):
         moves = self.get_possible_moves(pit_prob_matrix.shape[0])
         if not moves:
             return self.position
         
-        # Choose move with lowest pit probability
-        best_prob = float('inf')
-        best_moves = []
-        for mr, mc in moves:
-            prob = pit_prob_matrix[mr, mc]
-            if prob < best_prob:
-                best_prob = prob
-                best_moves = [(mr, mc)]
-            elif abs(prob - best_prob) < 1e-9:
-                best_moves.append((mr, mc))
+        safe_moves = [m for m in moves if m not in self.known_pits and m not in self.known_wumpus]
         
-        # Prefer unvisited moves with equal probability
-        unvisited_best = [m for m in best_moves if m not in self.visited]
-        if unvisited_best:
-            return random.choice(unvisited_best)
-        return random.choice(best_moves)
+        if safe_moves:
+            moves = safe_moves
+        else:
+            # If no safe moves are available, stay put
+            return self.position
 
-def main():
-    N = int(input("Enter the size of the Wumpus World (N>=4): "))
-    world = WumpusWorld(N=N, pit_probability=0.15, seed=42)
-    bayes_infer = BayesianPitInference(N=N, pit_prob=0.15)
-    agent = Agent(start=world.agent_start)
+        N = pit_prob_matrix.shape[0]
+        
+        # Create a penalty matrix that discourages revisits
+        visit_penalty = np.zeros((N, N))
+        for pos in self.visited:
+            r, c = pos
+            # Count occurrences in path_history
+            count = self.visit_counts.get(pos, 0)
+            # Apply an increasing penalty for revisits, capped at 0.4
+            visit_penalty[r, c] = min(0.4, count * 0.1)
+        
+        # Calculate total cost: pit probability + visit penalty
+        total_cost = pit_prob_matrix.copy()
+        for r in range(N):
+            for c in range(N):
+                # Add visit penalty to pit probability
+                total_cost[r, c] += visit_penalty[r, c]
+        
+        # Define safety thresholds based on total cost
+        safe_threshold = 0.3  # Consider cells with less than 30% total cost as safe
+        danger_threshold = 0.6  # Consider cells with more than 60% total cost as dangerous
+        
+        # Categorize moves based on total cost
+        safe_moves = [(mr, mc) for mr, mc in moves if total_cost[mr, mc] < safe_threshold]
+        risky_moves = [(mr, mc) for mr, mc in moves if safe_threshold <= total_cost[mr, mc] < danger_threshold]
+        dangerous_moves = [(mr, mc) for mr, mc in moves if total_cost[mr, mc] >= danger_threshold]
+        
+        # Decision strategy incorporating total cost
+        # 1. Prefer unvisited safe moves
+        unvisited_safe = [m for m in safe_moves if m not in self.visited]
+        if unvisited_safe:
+            return min(unvisited_safe, key=lambda m: total_cost[m[0], m[1]])
+        
+        # 2. Prefer any safe move based on total cost
+        if safe_moves:
+            return min(safe_moves, key=lambda m: total_cost[m[0], m[1]])
+        
+        # 3. Try unvisited risky moves
+        unvisited_risky = [m for m in risky_moves if m not in self.visited]
+        if unvisited_risky:
+            return min(unvisited_risky, key=lambda m: total_cost[m[0], m[1]])
+        
+        # 4. Use any risky move with lowest total cost
+        if risky_moves:
+            return min(risky_moves, key=lambda m: total_cost[m[0], m[1]])
+        
+        # 5. If forced to use dangerous moves, choose the least dangerous
+        if dangerous_moves:
+            return min(dangerous_moves, key=lambda m: total_cost[m[0], m[1]])
+        
+        # Fallback: just choose move with lowest total cost
+        return min(moves, key=lambda m: total_cost[m[0], m[1]])
     
-    step = 0
-    max_steps = 6*N
-    evidence = {}
-    done = False
-    
-    while step < max_steps and not done:
-        r, c = agent.position
-        
-        # Sense environment
-        breeze = world.sense_breeze(r, c)
-        stench = world.sense_stench(r, c)
-        
-        # Update evidence
-        evidence[f"Breeze_{r}_{c}"] = 1 if breeze else 0
-        
-        # Plot current state
-        world.plot_world(step)
-        
-        # Update and plot probabilities
-        pit_probs = bayes_infer.update_inference(evidence)
-        plot_pit_probabilities(pit_probs, step)
-        
-        # # Try both random and best moves
-        # if step % 2 == 0:  # Random move
-        #     next_move = agent.choose_random_move(N)
-        #     move_type = "random"
-        # else:  # Best move
-        #     next_move = agent.choose_best_move(pit_probs)
-        #     move_type = "best"
-        
-        next_move = agent.choose_best_move(pit_probs) #choosing best move
-        move_type = "best"
-        
-        print(f"Step {step}: Moving from {agent.position} to {next_move} ({move_type} move)")
+    def update_position(self, new_position, world):
+        """Update position and handle consequences"""
+        r, c = new_position
         
         # Check if move is safe
-        if world.is_pit(*next_move):
-            print(f"Fell into pit at {next_move}! Returning to {agent.last_safe_position}")
-            agent.position = agent.last_safe_position
+        if world.is_pit(r, c):
+            print(f"Fell into pit at {new_position}! Returning to {self.last_safe_position}")
+            self.known_pits.add(new_position)
+            self.position = self.last_safe_position
+            self.path_history.append(self.last_safe_position)  # Record the return to safety
+            return False
+        elif world.is_wumpus(r, c):
+            print(f"Encountered Wumpus at {new_position}! Returning to {self.last_safe_position}")
+            self.known_wumpus.add(new_position)
+            self.position = self.last_safe_position
+            self.path_history.append(self.last_safe_position)  # Record the return to safety
+            return False
         else:
-            agent.position = next_move
-            agent.last_safe_position = next_move
-            agent.visited.add(next_move)
-        
-        # Check if found gold
-        if world.is_gold(*agent.position):
-            print(f"Found gold at {agent.position} after {step} steps!")
-            done = True
-        
-        step += 1
+            # Safe move
+            self.position = new_position
+            self.last_safe_position = new_position
+            self.visited.add(new_position)
+            self.path_history.append(new_position)  # Record the move
+            
+            # Update visit count
+            self.visit_counts[new_position] = self.visit_counts.get(new_position, 0) + 1
+            
+            # Check for gold
+            if world.is_gold(r, c):
+                print(f"Found gold at {new_position}!")
+                return True  # Success!
+            return False  # Continue exploring
+
+
+def run_strategy(world, strategy, N, max_steps=500):
+    agent = Agent()
+    bayes_infer = BayesianInference(N)
+    evidence = {}
     
-    if not done:
-        print(f"Failed to find gold within {max_steps} steps")
+    for step in range(max_steps):
+        r, c = agent.position
+        evidence.update({
+            f"Breeze_{r}_{c}": int(world.sense_breeze(r, c)),
+            f"Stench_{r}_{c}": int(world.sense_stench(r, c))
+        })
+        for pos in agent.visited:
+            evidence[f"Pit_{pos[0]}_{pos[1]}"] = 0
+            if pos != (0,0):
+                evidence[f"Wumpus_{pos[0]}_{pos[1]}"] = 0
+        
+        pit_probs, wumpus_probs = bayes_infer.update_inference(evidence)
+        plot_pit_probabilities(pit_probs, step)
+        #plot_wumpus_probabilities(wumpus_probs, step)
+        
+        if strategy == "random":
+            next_move = agent.choose_random_move(N)
+        else:  # bayesian strategy
+            next_move = agent.choose_best_move(pit_probs)
+
+        done = agent.update_position(next_move, world)
+        
+        if done:
+            print(f"Gold found in {step} steps!")
+            return True
+    return False
+
+
+def main():
+    # Get world size input
+    while True:
+        try:
+            N = int(input("Enter the size of the Wumpus World (N>=4): "))
+            if N >= 4:
+                break
+            else:
+                print("Please enter a value greater than or equal to 4.")
+        except ValueError:
+            print("Please enter a valid integer.")
+    
+    # Set seed for reproducibility
+    seed = 42
+    random.seed(seed)
+    
+    # Create world
+    world = WumpusWorld(N=N, pit_probability=0.15, seed=seed)
+    
+    # Print actual world
+    print("World layout:")
+    for r in range(N):
+        row_str = ""
+        for c in range(N):
+            row_str += world.grid[r][c] + " "
+        print(row_str)
+    
+    # # Uncomment to run random strategy
+    # print("\n=== Running RANDOM strategy ===")
+    # random_result = run_strategy(world, "random", N)
+    
+    # # Run Bayesian strategy
+    print("\n=== Running BAYESIAN strategy ===")
+    bayesian_result = run_strategy(world, "bayesian", N)
+    
+    # Uncomment to compare results
+    # print("\n=== RESULTS COMPARISON ===")
+    # for strategy, result in [("Random", random_result), ("Bayesian", bayesian_result)]:
+    #     outcome = "SUCCESS" if result["success"] else "FAILURE"
+    #     print(f"{strategy} strategy: {outcome} ({result['steps']} steps)")
 
 if __name__ == "__main__":
     main()
