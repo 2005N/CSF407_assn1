@@ -66,13 +66,21 @@ The simulation requires API keys for both Gemini and Mistral models:
 * LLM vs LLM: Gemini (X) plays against Mistral (O)
 * LLM vs Human: Play against Gemini
 * Simulation Mode: Run multiple games automatically (e.g., 50 games)
+#### Binomial Distribution for Gemini wins (for 50 games)
+![image](https://github.com/user-attachments/assets/56dfa870-75e4-4ded-92b4-6c71a940f68d)
 
 ## Wumpus World Strategy Modes:
 
 * Best Move: Uses Bayesian inference to assess danger probabilities and selects the safest path
 * Random Move: Selects a random valid adjacent cell to explore
+#### Few results for N=5
+![image](https://github.com/user-attachments/assets/6038bd7d-2f20-446d-870d-3c3288489508)
 
-## In integrated simulation:
+![image](https://github.com/user-attachments/assets/4dee5e6d-9851-46b5-934e-647e61d14bb8)
+
+![image](https://github.com/user-attachments/assets/085d9915-93fa-48a4-8032-945a2f1dfe20)
+
+## In Integrated Simulation:
 ### Visualization
 The simulation generates visualizations for each step showing:
 * Current Wumpus World state with agent position
@@ -80,6 +88,12 @@ The simulation generates visualizations for each step showing:
 * Information about the current move type (best or random)
 
 Output images are saved as "Integrated_Simulation_Step_X.png" where X is the step number.
+
+#### Few results for tic_tac_toe board size 3 and Wumpus board 4
+![image](https://github.com/user-attachments/assets/ad8f8b58-cfb0-4b53-a9fa-fa5a12983ffb)
+![image](https://github.com/user-attachments/assets/7e98d310-1610-4a41-8292-a70617e63c31)
+
+![image](https://github.com/user-attachments/assets/1e29c25a-7364-4509-8e70-af37e0259148)
 
 ## Project Structure
 
