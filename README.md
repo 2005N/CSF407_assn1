@@ -66,8 +66,8 @@ The simulation requires API keys for both Gemini and Mistral models:
 * LLM vs LLM: Gemini (X) plays against Mistral (O)
 * LLM vs Human: Play against Gemini
 * Simulation Mode: Run multiple games automatically (e.g., 50 games)
-#### Binomial Distribution for Gemini wins (for 50 games)
-![image](https://github.com/user-attachments/assets/56dfa870-75e4-4ded-92b4-6c71a940f68d)
+#### Binomial Distribution for Gemini wins (for 100 games)
+![image](https://github.com/user-attachments/assets/55d58dca-ecec-4773-91dd-6929ec448ca7)
 
 ## Wumpus World Strategy Modes:
 
