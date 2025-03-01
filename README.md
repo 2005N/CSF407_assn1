@@ -15,7 +15,7 @@ This project implements an integrated simulation environment that combines two c
     Agent (starting at position 0,0)
     Gold (random location)
     Wumpus (random location)
-    Pits (randomly placed with probability 0.15)
+    Pits (randomly placed with probability 0.2)
 
 * The agent can sense:
     Breeze (adjacent to pits)
@@ -73,12 +73,18 @@ The simulation requires API keys for both Gemini and Mistral models:
 
 * Best Move: Uses Bayesian inference to assess danger probabilities and selects the safest path
 * Random Move: Selects a random valid adjacent cell to explore
-#### Few results for N=5
-![image](https://github.com/user-attachments/assets/6038bd7d-2f20-446d-870d-3c3288489508)
+  To use random mode, uncomment the random strategy code part in main function
+  
+#### Few results for N=4
+![image](https://github.com/user-attachments/assets/28126f32-a6af-4efd-af9e-d201d4ac41c6)
 
-![image](https://github.com/user-attachments/assets/4dee5e6d-9851-46b5-934e-647e61d14bb8)
+![image](https://github.com/user-attachments/assets/077ba80f-925e-43d7-87c5-affcb035a39b)
 
-![image](https://github.com/user-attachments/assets/085d9915-93fa-48a4-8032-945a2f1dfe20)
+#### Few results for N=10
+![image](https://github.com/user-attachments/assets/7e6f77be-d870-477e-b221-2101d630baeb)
+![image](https://github.com/user-attachments/assets/4e26fb1a-4656-4a4d-91c2-eca7435ef4b2)
+![image](https://github.com/user-attachments/assets/3d280723-c63c-464b-8bcc-b694e4840d2a)
+
 
 ## In Integrated Simulation:
 ### Visualization
