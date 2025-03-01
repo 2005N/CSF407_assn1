@@ -6,18 +6,12 @@ import numpy as np
 from scipy.stats import binom
 import os
 from mistralai import Mistral
-
-# Import Gemini and Anthropic libraries
 from google import genai
-import anthropic
 
 # Create a Gemini client (agent for player X)
 gemini_client = genai.Client(api_key="AIzaSyArkKhE3_VargUQs3HRKDC9N8OqvywVDBQ")
 
 
-# ---------------------
-# Board and Game Classes
-# ---------------------
 
 class TicTacToe:
     def __init__(self, size):
@@ -44,26 +38,19 @@ class TicTacToe:
         return all(self.board[r][c] != ' ' for r in range(self.size) for c in range(self.size))
 
     def check_winner(self):
-        # Check rows
         for row in self.board:
             if row[0] != ' ' and all(cell == row[0] for cell in row):
                 return row[0]
-        # Check columns
         for col in range(self.size):
             if self.board[0][col] != ' ' and all(self.board[row][col] == self.board[0][col] for row in range(self.size)):
                 return self.board[0][col]
-        # Check main diagonal
         if self.board[0][0] != ' ' and all(self.board[i][i] == self.board[0][0] for i in range(self.size)):
             return self.board[0][0]
-        # Check anti-diagonal
         if self.board[0][self.size - 1] != ' ' and all(self.board[i][self.size - 1 - i] == self.board[0][self.size - 1] for i in range(self.size)):
             return self.board[0][self.size - 1]
         return None
 
 
-# ---------------------
-# LLM Utility Function
-# ---------------------
 
 def board_to_string(game):
     """Converts the current board into a string for the prompt."""
@@ -73,9 +60,6 @@ def board_to_string(game):
     return "\n".join(lines)
 
 
-# ---------------------
-# LLM Agent Move Functions
-# ---------------------
 
 def get_llm_move_gemini(board_state, last_move, player):
     """
@@ -89,7 +73,7 @@ def get_llm_move_gemini(board_state, last_move, player):
     )
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",  # Adjust if you have access to a different Gemini model
+            model="gemini-2.0-flash", 
             contents=prompt,
         )
         move_str = response.text.strip()
@@ -100,37 +84,6 @@ def get_llm_move_gemini(board_state, last_move, player):
         return None
 
 
-def get_llm_move_claude(board_state, last_move, player):
-    """
-    Uses the official Anthropic Python client to get the next move.
-    Expects the model to return a move in the format "row,col".
-    """
-    prompt_text = (
-        f"You are playing tic-tac-toe. The board state is:\n{board_state}\n"
-        f"The opponent's last move was: {last_move}. Your mark is '{player}'.\n"
-        "Respond with your move in the format row,col. Only include the coordinates."
-    )
-    try:
-        client = anthropic.Client(api_key="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")
-        # Create a message with the correct messages parameter structure
-        message = client.messages.create(
-            model="claude-3-opus-20240229",
-            max_tokens=20,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt_text
-                }
-            ]
-        )
-        
-        # Extract the move from the response
-        move_str = message.content[0].text.strip()
-        row, col = map(int, move_str.split(','))
-        return (row, col)
-    except Exception as e:
-        print(f"Anthropic API error: {e}")
-        return None
 
 def get_llm_move_mistral(board_state, last_move, player):
     """
@@ -144,7 +97,6 @@ def get_llm_move_mistral(board_state, last_move, player):
     )
     try:
         client = Mistral(api_key="T8VEqzz4oYeK3affFYmu09iiBpAZJgvQ")
-        # Create a chat completion
         response = client.chat.complete(
             model="mistral-large-latest",
             messages=[
@@ -155,7 +107,6 @@ def get_llm_move_mistral(board_state, last_move, player):
             ]
         )
         
-        # Extract the move from the response
         move_str = response.choices[0].message.content.strip()
         row, col = map(int, move_str.split(','))
         return (row, col)
@@ -197,9 +148,6 @@ def human_agent_move(game):
             print("Invalid input format. Please enter your move as row,col.")
 
 
-# ---------------------
-# Main Game Logic
-# ---------------------
 
 def play_game(board_size, mode="LLM_vs_LLM"):
     """
@@ -219,8 +167,8 @@ def play_game(board_size, mode="LLM_vs_LLM"):
         agent_O = "Human"
 
     while True:
-       # print("\nCurrent board state:")
-       # game.print_board()
+        print("\nCurrent board state:")
+        game.print_board()
         if mode == "LLM_vs_LLM" or (mode == "LLM_vs_Human" and current_player == 'X'):
             agent_name = agent_X if current_player == 'X' else agent_O
            # print(f"{agent_name} ({current_player}) is thinking... (Opponent's last move: {last_move})")
@@ -239,11 +187,9 @@ def play_game(board_size, mode="LLM_vs_LLM"):
             game.print_board()
             return winner
         if game.is_full():
-            # For LLM vs LLM, resolve draws with a coin toss
             if mode == "LLM_vs_LLM":
-                coin = random.random()
-                winner = 'X' if coin < 0.5 else 'O'
-                print("\nBoard is full. Game ended in a draw. Deciding winner by coin toss...")
+                winner = 'O' # if draw->loss for llm-1
+                print("\nBoard is full. Game ended in a draw.")
                # print("\nFinal board state:")
                # game.print_board()
                 return winner
@@ -303,7 +249,6 @@ def main():
     """
     Main entry point for running the game or simulation.
     """
-    print("Welcome to the Tic Tac Toe AI Assignment!")
     try:
         board_size = int(input("Enter board size (N for NxN board, e.g., 3 for 3x3): "))
     except ValueError:
@@ -313,7 +258,7 @@ def main():
     print("\nSelect game mode:")
     print("1. LLM vs LLM (Gemini vs Mistral)")
     print("2. LLM vs Human (Gemini vs You)")
-    print("3. Simulation mode (500 automatic games)")
+    print("3. Simulation mode ( automatic games)")
     mode_input = input("Enter mode number (1/2/3): ")
 
     if mode_input == "1":

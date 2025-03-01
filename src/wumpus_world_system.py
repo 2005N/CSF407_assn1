@@ -7,7 +7,7 @@ from pgmpy.factors.discrete import TabularCPD
 from pgmpy.inference import VariableElimination
 
 class WumpusWorld:
-    def __init__(self, N=4, pit_probability=0.15, seed=42):
+    def __init__(self, N=4, pit_probability=0.2, seed=42):
         self.N = N
         self.rng = np.random.RandomState(seed)
         self.grid = [['E' for _ in range(N)] for _ in range(N)]
@@ -86,13 +86,12 @@ class WumpusWorld:
 
 
 class BayesianInference:
-    def __init__(self, N, pit_prob=0.15, seed=42):
+    def __init__(self, N, pit_prob=0.2, seed=42):
         self.N = N
         self.pit_prob = pit_prob
-        self.wumpus_prior = 1.0 / (N*N - 1)  # Assuming one Wumpus, excluding (0,0)
+        self.wumpus_prior = 1.0 / (N*N - 1) 
         self.model = BayesianNetwork()
         
-        # Create nodes for pits, breezes, wumpus, stenches
         self.pit_vars = []
         self.breeze_vars = []
         self.wumpus_vars = []
@@ -110,23 +109,18 @@ class BayesianInference:
                     w_var = f"Wumpus_{r}_{c}"
                     self.wumpus_vars.append(w_var)
         
-        # Add all nodes to the model
         self.model.add_nodes_from(self.pit_vars + self.breeze_vars + self.wumpus_vars + self.stench_vars)
         
-        # Add edges for breezes and stenches
         for r in range(N):
             for c in range(N):
                 b_var = f"Breeze_{r}_{c}"
                 s_var = f"Stench_{r}_{c}"
-                # Breeze edges from adjacent pits
                 for nr, nc in self.get_adjacent_neighbors(r, c):
                     self.model.add_edge(f"Pit_{nr}_{nc}", b_var)
-                # Stench edges from adjacent Wumpus
                 for nr, nc in self.get_adjacent_neighbors(r, c):
                     if (nr, nc) != (0, 0):
                         self.model.add_edge(f"Wumpus_{nr}_{nc}", s_var)
         
-        # Define CPDs
         self._define_cpds()
         self.inference = VariableElimination(self.model)
     
@@ -140,7 +134,6 @@ class BayesianInference:
         return neighbors
     
     def _define_cpds(self):
-        # Define Pit CPDs
         pit_cpds = []
         for r in range(self.N):
             for c in range(self.N):
@@ -150,13 +143,11 @@ class BayesianInference:
                     cpd = TabularCPD(f"Pit_{r}_{c}", 2, [[1-self.pit_prob], [self.pit_prob]])
                 pit_cpds.append(cpd)
         
-        # Define Wumpus CPDs
         wumpus_cpds = []
         for var in self.wumpus_vars:
             cpd = TabularCPD(var, 2, [[1 - self.wumpus_prior], [self.wumpus_prior]])
             wumpus_cpds.append(cpd)
         
-        # Define Breeze CPDs
         breeze_cpds = []
         for r in range(self.N):
             for c in range(self.N):
@@ -170,7 +161,6 @@ class BayesianInference:
                     cpd = TabularCPD(b_var, 2, values, parents, [2]*len(parents))
                 breeze_cpds.append(cpd)
         
-        # Define Stench CPDs
         stench_cpds = []
         for r in range(self.N):
             for c in range(self.N):
@@ -195,12 +185,10 @@ class BayesianInference:
         for r in range(self.N):
             for c in range(self.N):
                 pit_var = f"Pit_{r}_{c}"
-                # Only query if this variable is not in evidence
                 if pit_var not in filtered_evidence:
                     query = self.inference.query(variables=[pit_var], evidence=filtered_evidence)
                     pit_probs[r, c] = query.values[1]
                 else:
-                    # If it's in evidence, use that value directly
                     pit_probs[r, c] = filtered_evidence[pit_var]
                     
                 if (r, c) != (0, 0):
@@ -253,9 +241,7 @@ def plot_wumpus_probabilities(prob_matrix, step):
 
 def plot_danger_probabilities(pit_matrix, wumpus_matrix, step):
     """Plot combined danger probabilities (pits + wumpus)"""
-    # Combine probabilities - a cell is dangerous if it contains either a pit or wumpus
     # P(dangerous) = P(pit OR wumpus) = P(pit) + P(wumpus) - P(pit AND wumpus)
-    # Assuming pit and wumpus are independent: P(pit AND wumpus) = P(pit) * P(wumpus)
     danger_matrix = pit_matrix + wumpus_matrix - (pit_matrix * wumpus_matrix)
     
     # plt.figure(figsize=(5, 4))
@@ -310,7 +296,6 @@ class Agent:
         if safe_moves:
             moves = safe_moves
         else:
-            # If no safe moves are available, stay put
             return self.position
 
         N = pit_prob_matrix.shape[0]
@@ -319,47 +304,35 @@ class Agent:
         visit_penalty = np.zeros((N, N))
         for pos in self.visited:
             r, c = pos
-            # Count occurrences in path_history
             count = self.visit_counts.get(pos, 0)
-            # Apply an increasing penalty for revisits, capped at 0.4
             visit_penalty[r, c] = min(0.4, count * 0.1)
         
-        # Calculate total cost: pit probability + visit penalty
         total_cost = pit_prob_matrix.copy()
         for r in range(N):
             for c in range(N):
-                # Add visit penalty to pit probability
                 total_cost[r, c] += visit_penalty[r, c]
         
-        # Define safety thresholds based on total cost
         safe_threshold = 0.3  # Consider cells with less than 30% total cost as safe
         danger_threshold = 0.6  # Consider cells with more than 60% total cost as dangerous
         
-        # Categorize moves based on total cost
         safe_moves = [(mr, mc) for mr, mc in moves if total_cost[mr, mc] < safe_threshold]
         risky_moves = [(mr, mc) for mr, mc in moves if safe_threshold <= total_cost[mr, mc] < danger_threshold]
         dangerous_moves = [(mr, mc) for mr, mc in moves if total_cost[mr, mc] >= danger_threshold]
         
-        # Decision strategy incorporating total cost
-        # 1. Prefer unvisited safe moves
         unvisited_safe = [m for m in safe_moves if m not in self.visited]
         if unvisited_safe:
             return min(unvisited_safe, key=lambda m: total_cost[m[0], m[1]])
         
-        # 2. Prefer any safe move based on total cost
         if safe_moves:
             return min(safe_moves, key=lambda m: total_cost[m[0], m[1]])
         
-        # 3. Try unvisited risky moves
         unvisited_risky = [m for m in risky_moves if m not in self.visited]
         if unvisited_risky:
             return min(unvisited_risky, key=lambda m: total_cost[m[0], m[1]])
         
-        # 4. Use any risky move with lowest total cost
         if risky_moves:
             return min(risky_moves, key=lambda m: total_cost[m[0], m[1]])
         
-        # 5. If forced to use dangerous moves, choose the least dangerous
         if dangerous_moves:
             return min(dangerous_moves, key=lambda m: total_cost[m[0], m[1]])
         
@@ -370,34 +343,30 @@ class Agent:
         """Update position and handle consequences"""
         r, c = new_position
         
-        # Check if move is safe
         if world.is_pit(r, c):
             print(f"Fell into pit at {new_position}! Returning to {self.last_safe_position}")
             self.known_pits.add(new_position)
             self.position = self.last_safe_position
-            self.path_history.append(self.last_safe_position)  # Record the return to safety
+            self.path_history.append(self.last_safe_position)  
             return False
         elif world.is_wumpus(r, c):
             print(f"Encountered Wumpus at {new_position}! Returning to {self.last_safe_position}")
             self.known_wumpus.add(new_position)
             self.position = self.last_safe_position
-            self.path_history.append(self.last_safe_position)  # Record the return to safety
+            self.path_history.append(self.last_safe_position)
             return False
         else:
-            # Safe move
             self.position = new_position
             self.last_safe_position = new_position
             self.visited.add(new_position)
-            self.path_history.append(new_position)  # Record the move
+            self.path_history.append(new_position) 
             
-            # Update visit count
             self.visit_counts[new_position] = self.visit_counts.get(new_position, 0) + 1
             
-            # Check for gold
             if world.is_gold(r, c):
                 print(f"Found gold at {new_position}!")
-                return True  # Success!
-            return False  # Continue exploring
+                return True 
+            return False  
 
 
 def run_strategy(world, strategy, N, max_steps=500):
@@ -422,7 +391,7 @@ def run_strategy(world, strategy, N, max_steps=500):
         
         if strategy == "random":
             next_move = agent.choose_random_move(N)
-        else:  # bayesian strategy
+        else: 
             next_move = agent.choose_best_move(pit_probs)
 
         done = agent.update_position(next_move, world)
@@ -434,7 +403,6 @@ def run_strategy(world, strategy, N, max_steps=500):
 
 
 def main():
-    # Get world size input
     while True:
         try:
             N = int(input("Enter the size of the Wumpus World (N>=4): "))
@@ -445,14 +413,11 @@ def main():
         except ValueError:
             print("Please enter a valid integer.")
     
-    # Set seed for reproducibility
     seed = 42
     random.seed(seed)
     
-    # Create world
-    world = WumpusWorld(N=N, pit_probability=0.15, seed=seed)
+    world = WumpusWorld(N=N, pit_probability=0.2, seed=seed)
     
-    # Print actual world
     print("World layout:")
     for r in range(N):
         row_str = ""
