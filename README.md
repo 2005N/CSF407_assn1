@@ -73,6 +73,8 @@ The simulation requires API keys for both Gemini and Mistral models:
 
 * Best Move: Uses Bayesian inference to assess danger probabilities and selects the safest path
 * Random Move: Selects a random valid adjacent cell to explore
+  To use random mode, uncomment the random strategy code part in main function
+  
 #### Few results for N=5
 ![image](https://github.com/user-attachments/assets/6038bd7d-2f20-446d-870d-3c3288489508)
 
